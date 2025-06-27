@@ -143,27 +143,39 @@ def calculate_snr_frequency_domain(signal_data):
     np_ = np.mean(p[n_band])
     return 10 * np.log10(sp / (np_ + 1e-12))
 
-# --- Main callable function ---
+# --- Main function ---
 
-def process_emg_signal(raw_emg: np.ndarray):
-    filtered = apply_bandpass_filter(raw_emg)
-    filtered = apply_notch_filter(filtered)
-    denoised = cwt_denoise(filtered)
-    rms = calculate_moving_rms(denoised)
-    intervals = detect_contractions_dual_scale(denoised)
+def process_emg_dataframe(df: pd.DataFrame):
+    results = {}
+    output_df = pd.DataFrame({'time': np.arange(len(df)) / FS})
 
-    metrics = {}
-    metrics['peak_magnitude'], metrics['avg_magnitude'] = calculate_magnitude_metrics(rms, intervals)
-    metrics['fatigue_index'], _, _ = calculate_fatigue_index(denoised, FS, intervals)
-    metrics['mean_freq'], metrics['median_freq'] = calculate_frequency_metrics(denoised, FS, intervals)
-    metrics['baseline_drift'], metrics['zcr'] = calculate_signal_quality_metrics(raw_emg, denoised)
-    metrics['activation_ratio'], metrics['rate_of_rise'], metrics['rate_of_fall'] = calculate_dynamic_metrics(rms, intervals, len(raw_emg), FS)
-    metrics['rfd_analog'] = calculate_rfd_analog(rms, FS, intervals)
-    metrics['time_snr_raw'] = calculate_snr_time_domain(raw_emg)
-    metrics['time_snr_denoised'] = calculate_snr_time_domain(denoised)
-    metrics['freq_snr_raw'] = calculate_snr_frequency_domain(raw_emg)
-    metrics['freq_snr_denoised'] = calculate_snr_frequency_domain(denoised)
+    for col in df.columns:
+        if 'emg' not in col.lower():
+            continue
 
-    time = np.arange(len(raw_emg)) / FS
-    df = pd.DataFrame({'time': time, 'filtered': denoised, 'rms': rms})
-    return df, metrics
+        raw = df[col].values
+        filtered = apply_bandpass_filter(raw)
+        filtered = apply_notch_filter(filtered)
+        denoised = cwt_denoise(filtered)
+        rms = calculate_moving_rms(denoised)
+        intervals = detect_contractions_dual_scale(denoised)
+
+        metrics = {}
+        metrics['peak_magnitude'], metrics['avg_magnitude'] = calculate_magnitude_metrics(rms, intervals)
+        metrics['fatigue_index'], _, _ = calculate_fatigue_index(denoised, FS, intervals)
+        metrics['mean_freq'], metrics['median_freq'] = calculate_frequency_metrics(denoised, FS, intervals)
+        metrics['baseline_drift'], metrics['zcr'] = calculate_signal_quality_metrics(raw, denoised)
+        metrics['activation_ratio'], metrics['rate_of_rise'], metrics['rate_of_fall'] = calculate_dynamic_metrics(rms, intervals, len(raw), FS)
+        metrics['rfd_analog'] = calculate_rfd_analog(rms, FS, intervals)
+        metrics['time_snr_raw'] = calculate_snr_time_domain(raw)
+        metrics['time_snr_denoised'] = calculate_snr_time_domain(denoised)
+        metrics['freq_snr_raw'] = calculate_snr_frequency_domain(raw)
+        metrics['freq_snr_denoised'] = calculate_snr_frequency_domain(denoised)
+
+        for key, val in metrics.items():
+            results[f"{col}_{key}"] = val
+
+        output_df[f"{col}_filtered"] = denoised
+        output_df[f"{col}_rms"] = rms
+
+    return output_df, results
